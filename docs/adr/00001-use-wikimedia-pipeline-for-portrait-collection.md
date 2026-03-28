@@ -15,9 +15,9 @@ issue #1 では、時代区分・国籍・性別ごとに商用利用可能な�
 
 画像候補の抽出には Wikidata SPARQL endpoint を使い、画像とライセンス情報の取得には Wikimedia Commons API を使う。
 
-時代区分は `fictional_scientist_quota_master_10000.csv` の列構造 (`era_name`, `birth_year_band`, `birth_year_start`, `birth_year_end`) を維持したまま、収集の実行可能性を優先して 4 区分に再編し、`data/reference/era_definitions.csv` に固定化する。
+時代区分は `fictional_scientist_quota_master_10000.csv` の `era_name`, `birth_year_band`, `birth_year_start`, `birth_year_end` をそのまま採用し、13 区分の `data/reference/era_definitions.csv` に固定化する。
 
-国籍軸は現代国名に正規化した 4 か国 (`data/reference/nationality_targets.csv`) を採用し、Wikidata クエリでは再現性と古代人物への対応を優先して「出生地を現代国家に射影した国名」を使用する。取得困難な組み合わせは `collection_summary.csv` の shortage reason に明示する。
+国籍軸は参考元 CSV の主要国籍に寄せて、現代国名に正規化した 30 か国 (`data/reference/nationality_targets.csv`) を採用する。Wikidata クエリでは再現性と古代人物への対応を優先して「出生地を現代国家に射影した国名」を使用する。取得困難な組み合わせは `collection_summary.csv` の shortage reason に明示する。
 
 issue 本文で「科学者でなくてもよい」とされているため、候補抽出は職業で絞り込まず、画像・年代・出生地・性別の条件を満たす人物全般から行う。
 

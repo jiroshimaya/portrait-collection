@@ -11,7 +11,6 @@ from .axes import (
     CountryTarget,
     EraDefinition,
     SUPPORTED_GENDERS,
-    assign_era,
     default_country_file,
     default_era_file,
     load_country_targets,
@@ -19,7 +18,12 @@ from .axes import (
     normalize_gender,
     slugify,
 )
-from .commons import CommonsImageMetadata, download_image, fetch_image_metadata, is_commercially_usable
+from .commons import (
+    CommonsImageMetadata,
+    download_image,
+    fetch_image_metadata,
+    is_commercially_usable,
+)
 from .wikidata import WikidataCandidate, fetch_candidates
 
 
@@ -72,7 +76,9 @@ def collect_portraits(
 ) -> CollectionSummary:
     eras = load_era_definitions(eras_file)
     countries = load_country_targets(countries_file)
-    stats = _build_stats(countries=countries, eras=eras, target_count=per_combination_target)
+    stats = _build_stats(
+        countries=countries, eras=eras, target_count=per_combination_target
+    )
     records: list[PortraitRecord] = []
     errors: list[dict[str, str]] = []
     metadata_cache: dict[str, CommonsImageMetadata] = {}
@@ -82,7 +88,9 @@ def collect_portraits(
     for country in countries:
         for era in eras:
             for gender in SUPPORTED_GENDERS:
-                combination_key = _combination_key(country.country_name, era.era_name, gender)
+                combination_key = _combination_key(
+                    country.country_name, era.era_name, gender
+                )
                 combination_stats = stats[combination_key]
                 try:
                     candidates = fetch_candidates(
@@ -166,7 +174,9 @@ def collect_portraits(
                     combination_stats.collected_count += 1
                     records.append(
                         PortraitRecord(
-                            portrait_id=_portrait_id(candidate.entity_id, candidate.image_file_title),
+                            portrait_id=_portrait_id(
+                                candidate.entity_id, candidate.image_file_title
+                            ),
                             entity_id=candidate.entity_id,
                             person_name=candidate.person_name,
                             birth_year=candidate.birth_year,
@@ -213,7 +223,9 @@ def collect_portraits(
     )
 
     combinations_filled = sum(
-        1 for combination_stats in stats.values() if combination_stats.collected_count >= per_combination_target
+        1
+        for combination_stats in stats.values()
+        if combination_stats.collected_count >= per_combination_target
     )
     return CollectionSummary(
         output_dir=output_dir,
@@ -230,7 +242,9 @@ def _build_stats(
     target_count: int,
 ) -> dict[str, CombinationStats]:
     return {
-        _combination_key(country.country_name, era.era_name, gender): CombinationStats(target_count=target_count)
+        _combination_key(country.country_name, era.era_name, gender): CombinationStats(
+            target_count=target_count
+        )
         for country in countries
         for era in eras
         for gender in SUPPORTED_GENDERS
@@ -279,7 +293,9 @@ def _write_outputs(
         for record in records:
             handle.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
 
-    with (metadata_dir / "collection_summary.csv").open("w", encoding="utf-8", newline="") as handle:
+    with (metadata_dir / "collection_summary.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as handle:
         writer = csv.writer(handle)
         writer.writerow(
             [

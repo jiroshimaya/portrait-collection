@@ -12,7 +12,9 @@ from urllib.request import Request, urlopen
 from .axes import CountryTarget, EraDefinition
 
 WIKIDATA_SPARQL_ENDPOINT: Final[str] = "https://query.wikidata.org/sparql"
-USER_AGENT: Final[str] = "portrait-collection/0.1 (https://github.com/jiroshimaya/portrait-collection)"
+USER_AGENT: Final[str] = (
+    "portrait-collection/0.1 (https://github.com/jiroshimaya/portrait-collection)"
+)
 GENDER_QIDS: Final[dict[str, str]] = {
     "male": "Q6581097",
     "female": "Q6581072",
@@ -55,7 +57,9 @@ def fetch_candidates(
         entity_id = entity_url.rsplit("/", 1)[-1]
         birth_year = int(binding["dateOfBirth"]["value"][:4])
         image_url = binding["image"]["value"]
-        image_file_title = "File:" + unquote(urlparse(image_url).path.rsplit("/", 1)[-1])
+        image_file_title = "File:" + unquote(
+            urlparse(image_url).path.rsplit("/", 1)[-1]
+        )
         key = (entity_id, image_file_title)
 
         if key in seen_keys:
@@ -104,7 +108,10 @@ def _load_payload(
         limit=limit,
     )
     url = f"{WIKIDATA_SPARQL_ENDPOINT}?format=json&query={quote(query)}"
-    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/sparql-results+json"})
+    request = Request(
+        url,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/sparql-results+json"},
+    )
 
     for attempt in range(1):
         try:
@@ -122,7 +129,9 @@ def _load_payload(
                 ) from error
         time.sleep(2**attempt)
 
-    raise RuntimeError(f"Wikidata query failed for {country.country_name} / {era.era_name} / {gender}")
+    raise RuntimeError(
+        f"Wikidata query failed for {country.country_name} / {era.era_name} / {gender}"
+    )
 
 
 def _build_query(

@@ -8,7 +8,9 @@ from urllib.parse import quote
 
 
 class TestCollectCli:
-    def test_正常系_fixture指定で画像とメタデータを保存する(self, tmp_path: Path) -> None:
+    def test_正常系_fixture指定で画像とメタデータを保存する(
+        self, tmp_path: Path
+    ) -> None:
         fixtures_dir = tmp_path / "fixtures"
         (fixtures_dir / "wikidata").mkdir(parents=True)
         (fixtures_dir / "commons").mkdir(parents=True)
@@ -43,7 +45,9 @@ class TestCollectCli:
                     "results": {
                         "bindings": [
                             {
-                                "person": {"value": "https://www.wikidata.org/entity/Q123"},
+                                "person": {
+                                    "value": "https://www.wikidata.org/entity/Q123"
+                                },
                                 "personLabel": {"value": "Example Scientist"},
                                 "dateOfBirth": {"value": "1867-11-07T00:00:00Z"},
                                 "genderLabel": {"value": "female"},
@@ -74,11 +78,15 @@ class TestCollectCli:
                                         "url": "https://upload.wikimedia.org/example.jpg",
                                         "thumburl": "https://upload.wikimedia.org/example-512.jpg",
                                         "extmetadata": {
-                                            "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                                            "LicenseShortName": {
+                                                "value": "CC BY-SA 4.0"
+                                            },
                                             "LicenseUrl": {
                                                 "value": "https://creativecommons.org/licenses/by-sa/4.0/"
                                             },
-                                            "UsageTerms": {"value": "Creative Commons Attribution-Share Alike 4.0"},
+                                            "UsageTerms": {
+                                                "value": "Creative Commons Attribution-Share Alike 4.0"
+                                            },
                                             "Artist": {"value": "Example Artist"},
                                             "Credit": {"value": "Example Credit"},
                                             "AttributionRequired": {"value": "true"},
@@ -93,7 +101,9 @@ class TestCollectCli:
             ),
             encoding="utf-8",
         )
-        (fixtures_dir / "binary" / quote(file_title, safe="")).write_bytes(b"fake-image-binary")
+        (fixtures_dir / "binary" / quote(file_title, safe="")).write_bytes(
+            b"fake-image-binary"
+        )
 
         result = subprocess.run(
             [
@@ -125,13 +135,19 @@ class TestCollectCli:
         assert (output_dir / "metadata" / "portraits.jsonl").exists()
         assert (output_dir / "metadata" / "collection_summary.csv").exists()
 
-        records = (output_dir / "metadata" / "portraits.jsonl").read_text(encoding="utf-8").splitlines()
+        records = (
+            (output_dir / "metadata" / "portraits.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
         assert len(records) == 1
         record = json.loads(records[0])
         assert record["nationality"] == "Greece"
         assert record["gender"] == "female"
 
-        with (output_dir / "metadata" / "collection_summary.csv").open("r", encoding="utf-8") as handle:
+        with (output_dir / "metadata" / "collection_summary.csv").open(
+            "r", encoding="utf-8"
+        ) as handle:
             summary_rows = list(csv.DictReader(handle))
 
         assert summary_rows == [

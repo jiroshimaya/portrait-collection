@@ -10,7 +10,9 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 COMMONS_API_ENDPOINT: Final[str] = "https://commons.wikimedia.org/w/api.php"
-USER_AGENT: Final[str] = "portrait-collection/0.1 (https://github.com/jiroshimaya/portrait-collection)"
+USER_AGENT: Final[str] = (
+    "portrait-collection/0.1 (https://github.com/jiroshimaya/portrait-collection)"
+)
 
 
 @dataclass(frozen=True)
@@ -32,7 +34,9 @@ def fetch_image_metadata(
     image_width: int,
     fixtures_dir: Path | None = None,
 ) -> CommonsImageMetadata:
-    payload = _load_payload(file_title=file_title, image_width=image_width, fixtures_dir=fixtures_dir)
+    payload = _load_payload(
+        file_title=file_title, image_width=image_width, fixtures_dir=fixtures_dir
+    )
     pages = payload["query"]["pages"]
     page = next(iter(pages.values()))
     image_info = page["imageinfo"][0]
@@ -96,10 +100,14 @@ def download_image(
         with urlopen(request, timeout=90) as response, destination.open("wb") as handle:
             shutil.copyfileobj(response, handle)
     except (HTTPError, URLError, TimeoutError, OSError) as error:
-        raise RuntimeError(f"Image download failed for {file_title}: {error}") from error
+        raise RuntimeError(
+            f"Image download failed for {file_title}: {error}"
+        ) from error
 
 
-def _load_payload(file_title: str, image_width: int, fixtures_dir: Path | None) -> dict[str, Any]:
+def _load_payload(
+    file_title: str, image_width: int, fixtures_dir: Path | None
+) -> dict[str, Any]:
     if fixtures_dir is not None:
         fixture_path = fixtures_dir / "commons" / f"{quote(file_title, safe='')}.json"
 
@@ -119,7 +127,9 @@ def _load_payload(file_title: str, image_width: int, fixtures_dir: Path | None) 
         with urlopen(request, timeout=90) as response:
             return json.load(response)
     except (HTTPError, URLError, TimeoutError) as error:
-        raise RuntimeError(f"Commons metadata fetch failed for {file_title}: {error}") from error
+        raise RuntimeError(
+            f"Commons metadata fetch failed for {file_title}: {error}"
+        ) from error
 
 
 def _extract_metadata_value(metadata: dict[str, Any], key: str) -> str:

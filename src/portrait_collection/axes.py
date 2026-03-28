@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-REFERENCE_DATA_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "data" / "reference"
+REFERENCE_DATA_DIR: Final[Path] = (
+    Path(__file__).resolve().parents[2] / "data" / "reference"
+)
 SUPPORTED_GENDERS: Final[tuple[str, ...]] = ("male", "female")
 
 

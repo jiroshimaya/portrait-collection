@@ -12,7 +12,7 @@ sh scripts/setup.sh
 
 ## 収集コマンド
 
-既定の時代区分は、参照元 CSV の列構造を保った 4 区分の `data/reference/era_definitions.csv`、国籍ターゲットは 4 か国の `data/reference/nationality_targets.csv` を使います。
+既定の時代区分は、参照元 CSV と同じ 13 区分の `data/reference/era_definitions.csv`、国籍ターゲットは参考元 CSV の主要国籍を現代国名へ正規化した 30 か国の `data/reference/nationality_targets.csv` を使います。
 
 ```bash
 uv run portrait-collection collect \
@@ -30,9 +30,11 @@ uv run portrait-collection collect \
 
 画像本体は `artifacts/portrait_collection/images/` 配下に保存されます。
 
+開発時に対象を絞りたい場合は、`--eras-file` と `--countries-file` で小さい CSV を渡して部分実行できます。
+
 ## 収集方針
 
-- 時代区分は issue で参照された `fictional_scientist_quota_master_10000.csv` の列定義を維持しつつ、収集実行しやすい 4 区分に集約
+- 時代区分は issue で参照された `fictional_scientist_quota_master_10000.csv` の 13 区分をそのまま採用
 - 国籍は現代国名に統一し、収集上は「出生地を現代国家に射影した国名」を用いる
 - 性別は現状の Wikidata 収集安定性を優先して `male` / `female` を対象
 - 商用利用不可 (`NonCommercial`) の画像は除外

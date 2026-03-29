@@ -7,6 +7,9 @@ requires-python = ">=3.12"
 dependencies = [
 ]
 
+[project.scripts]
+portrait-collection = "portrait_collection.cli:main"
+
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
@@ -41,3 +44,4 @@ check = """
   uv run pre-commit run --all-files &&
   uv run pytest tests
 """
+collect = "uv run portrait-collection collect"

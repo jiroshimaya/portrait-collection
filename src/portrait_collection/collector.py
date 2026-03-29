@@ -11,6 +11,7 @@ from .axes import (
     CountryTarget,
     EraDefinition,
     SUPPORTED_GENDERS,
+    assign_era,
     default_country_file,
     default_era_file,
     load_country_targets,
@@ -24,15 +25,22 @@ from .commons import (
     fetch_image_metadata,
     is_commercially_usable,
 )
+from .artic import search_portraits_for_combo as search_artic_portraits_for_combo
+from .cma import search_portraits_for_combo as search_cma_portraits_for_combo
+from .loc import search_portraits_for_combo
+from .met import search_portraits_for_person
+from .wellcome import search_portraits_for_combo as search_wellcome_portraits_for_combo
 from .wikidata import WikidataCandidate, fetch_candidates
 
 
 @dataclass(frozen=True)
 class PortraitRecord:
     portrait_id: str
+    source_name: str
     entity_id: str
     person_name: str
     birth_year: int
+    year_basis: str
     era_name: str
     birth_year_band: str
     nationality: str
@@ -82,82 +90,67 @@ def collect_portraits(
     records: list[PortraitRecord] = []
     errors: list[dict[str, str]] = []
     metadata_cache: dict[str, CommonsImageMetadata] = {}
-    candidate_limit = max(25, per_combination_target * 10)
+    met_cache: dict[str, list[CommonsImageMetadata]] = {}
+    candidate_limit = max(100, per_combination_target * len(eras) * 2)
     output_dir.mkdir(parents=True, exist_ok=True)
+    collected_portrait_ids: set[str] = set()
 
     for country in countries:
-        for era in eras:
-            for gender in SUPPORTED_GENDERS:
-                combination_key = _combination_key(
-                    country.country_name, era.era_name, gender
-                )
-                combination_stats = stats[combination_key]
+        for gender in SUPPORTED_GENDERS:
+            candidates_by_key: dict[tuple[str, str], WikidataCandidate] = {}
+            for sort_order in ("asc", "desc"):
                 try:
                     candidates = fetch_candidates(
                         country,
-                        era=era,
                         gender=gender,
                         limit=candidate_limit,
+                        sort_order=sort_order,
                         fixtures_dir=fixtures_dir,
                     )
                 except RuntimeError as error:
                     errors.append(
                         {
                             "country": country.country_name,
-                            "era_name": era.era_name,
                             "gender": gender,
+                            "sort_order": sort_order,
                             "error": str(error),
                         }
                     )
                     continue
 
                 for candidate in candidates:
-                    normalized_gender = normalize_gender(candidate.gender)
-                    if normalized_gender is None:
-                        continue
+                    candidate_key = (candidate.entity_id, candidate.image_file_title)
+                    candidates_by_key[candidate_key] = candidate
 
-                    combination_stats.candidate_count += 1
+            for candidate in sorted(
+                candidates_by_key.values(),
+                key=lambda current: (current.birth_year, current.person_name),
+            ):
+                normalized_gender = normalize_gender(candidate.gender)
+                if normalized_gender is None:
+                    continue
 
-                    if combination_stats.collected_count >= per_combination_target:
-                        continue
+                era = assign_era(candidate.birth_year, eras)
+                if era is None:
+                    continue
 
-                    metadata = metadata_cache.get(candidate.image_file_title)
-                    if metadata is None:
-                        try:
-                            metadata = fetch_image_metadata(
-                                candidate.image_file_title,
-                                image_width=image_width,
-                                fixtures_dir=fixtures_dir,
-                            )
-                        except RuntimeError as error:
-                            combination_stats.download_failure_count += 1
-                            errors.append(
-                                {
-                                    "image_file_title": candidate.image_file_title,
-                                    "source_url": candidate.wikidata_url,
-                                    "error": str(error),
-                                }
-                            )
-                            continue
-                        metadata_cache[candidate.image_file_title] = metadata
+                combination_key = _combination_key(
+                    country.country_name,
+                    era.era_name,
+                    normalized_gender,
+                )
+                combination_stats = stats[combination_key]
+                combination_stats.candidate_count += 1
 
-                    if not is_commercially_usable(metadata):
-                        combination_stats.license_rejected_count += 1
-                        continue
+                if combination_stats.collected_count >= per_combination_target:
+                    continue
 
-                    local_path = _build_local_path(
-                        output_dir=output_dir,
-                        country=country,
-                        era=era,
-                        gender=gender,
-                        candidate=candidate,
-                    )
-
+                commons_metadata = metadata_cache.get(candidate.image_file_title)
+                if commons_metadata is None:
                     try:
-                        download_image(
+                        commons_metadata = fetch_image_metadata(
                             candidate.image_file_title,
-                            download_url=metadata.download_url,
-                            destination=local_path,
+                            image_width=image_width,
                             fixtures_dir=fixtures_dir,
                         )
                     except RuntimeError as error:
@@ -169,45 +162,281 @@ def collect_portraits(
                                 "error": str(error),
                             }
                         )
-                        continue
+                    else:
+                        metadata_cache[candidate.image_file_title] = commons_metadata
 
-                    combination_stats.collected_count += 1
-                    records.append(
-                        PortraitRecord(
-                            portrait_id=_portrait_id(
-                                candidate.entity_id, candidate.image_file_title
-                            ),
-                            entity_id=candidate.entity_id,
-                            person_name=candidate.person_name,
-                            birth_year=candidate.birth_year,
-                            era_name=era.era_name,
-                            birth_year_band=era.birth_year_band,
-                            nationality=country.country_name,
-                            gender=gender,
-                            source_url=candidate.wikidata_url,
-                            media_page_url=metadata.media_page_url,
-                            image_file_title=candidate.image_file_title,
-                            license_short_name=metadata.license_short_name,
-                            license_url=metadata.license_url,
-                            usage_terms=metadata.usage_terms,
-                            artist=metadata.artist,
-                            credit=metadata.credit,
-                            local_path=str(local_path.relative_to(output_dir)),
-                        )
+                collected_from_commons = False
+                if commons_metadata is not None:
+                    collected_from_commons = _maybe_collect_asset(
+                        output_dir=output_dir,
+                        country=country,
+                        era=era,
+                        gender=normalized_gender,
+                        candidate=candidate,
+                        source_name="wikimedia-commons",
+                        source_url=candidate.wikidata_url,
+                        metadata=commons_metadata,
+                        stats=combination_stats,
+                        records=records,
+                        errors=errors,
+                        collected_portrait_ids=collected_portrait_ids,
+                        fixtures_dir=fixtures_dir,
                     )
 
-                _write_outputs(
-                    output_dir=output_dir,
-                    records=records,
-                    stats=stats,
-                    countries=countries,
-                    eras=eras,
-                    errors=errors,
-                    per_combination_target=per_combination_target,
-                    image_width=image_width,
-                    eras_file=eras_file or default_era_file(),
-                    countries_file=countries_file or default_country_file(),
+                if combination_stats.collected_count >= per_combination_target:
+                    continue
+                if collected_from_commons:
+                    continue
+
+                met_results = met_cache.get(candidate.entity_id)
+                if met_results is None:
+                    try:
+                        met_results = search_portraits_for_person(
+                            candidate.person_name,
+                            limit=max(2, per_combination_target),
+                            fixtures_dir=fixtures_dir,
+                        )
+                    except RuntimeError as error:
+                        errors.append(
+                            {
+                                "person_name": candidate.person_name,
+                                "source_name": "the-met",
+                                "error": str(error),
+                            }
+                        )
+                        met_results = []
+                    met_cache[candidate.entity_id] = met_results
+
+                for met_metadata in met_results:
+                    if combination_stats.collected_count >= per_combination_target:
+                        break
+                    _maybe_collect_asset(
+                        output_dir=output_dir,
+                        country=country,
+                        era=era,
+                        gender=normalized_gender,
+                        candidate=candidate,
+                        source_name="the-met",
+                        source_url=candidate.wikidata_url,
+                        metadata=met_metadata,
+                        stats=combination_stats,
+                        records=records,
+                        errors=errors,
+                        collected_portrait_ids=collected_portrait_ids,
+                        fixtures_dir=fixtures_dir,
+                    )
+
+            _write_outputs(
+                output_dir=output_dir,
+                records=records,
+                stats=stats,
+                countries=countries,
+                eras=eras,
+                errors=errors,
+                per_combination_target=per_combination_target,
+                image_width=image_width,
+                eras_file=eras_file or default_era_file(),
+                countries_file=countries_file or default_country_file(),
+            )
+
+        for era in eras:
+            for gender in SUPPORTED_GENDERS:
+                combination_key = _combination_key(
+                    country.country_name, era.era_name, gender
                 )
+                combination_stats = stats[combination_key]
+                remaining = per_combination_target - combination_stats.collected_count
+                if remaining <= 0:
+                    continue
+
+                artic_outcome = search_artic_portraits_for_combo(
+                    country,
+                    era,
+                    gender,
+                    limit=max(remaining * 3, per_combination_target),
+                    fixtures_dir=fixtures_dir,
+                )
+                for error in artic_outcome.errors:
+                    errors.append(
+                        {
+                            "country": country.country_name,
+                            "era_name": era.era_name,
+                            "gender": gender,
+                            "source_name": "art-institute-of-chicago",
+                            "error": error,
+                        }
+                    )
+
+                for asset in artic_outcome.assets:
+                    combination_stats.candidate_count += 1
+                    if combination_stats.collected_count >= per_combination_target:
+                        break
+                    _maybe_collect_direct_asset(
+                        output_dir=output_dir,
+                        country=country,
+                        era=era,
+                        gender=gender,
+                        asset_id=asset.asset_id,
+                        person_name=asset.title,
+                        reference_year=asset.year,
+                        year_basis="object_date",
+                        source_name="art-institute-of-chicago",
+                        source_url=asset.source_url,
+                        metadata=asset.metadata,
+                        stats=combination_stats,
+                        records=records,
+                        errors=errors,
+                        collected_portrait_ids=collected_portrait_ids,
+                        fixtures_dir=fixtures_dir,
+                    )
+
+                remaining = per_combination_target - combination_stats.collected_count
+                if remaining <= 0:
+                    continue
+
+                cma_outcome = search_cma_portraits_for_combo(
+                    country,
+                    era,
+                    gender,
+                    limit=max(remaining * 3, per_combination_target),
+                    fixtures_dir=fixtures_dir,
+                )
+                for error in cma_outcome.errors:
+                    errors.append(
+                        {
+                            "country": country.country_name,
+                            "era_name": era.era_name,
+                            "gender": gender,
+                            "source_name": "cleveland-museum-of-art",
+                            "error": error,
+                        }
+                    )
+
+                for asset in cma_outcome.assets:
+                    combination_stats.candidate_count += 1
+                    if combination_stats.collected_count >= per_combination_target:
+                        break
+                    _maybe_collect_direct_asset(
+                        output_dir=output_dir,
+                        country=country,
+                        era=era,
+                        gender=gender,
+                        asset_id=asset.asset_id,
+                        person_name=asset.title,
+                        reference_year=asset.year,
+                        year_basis="object_date",
+                        source_name="cleveland-museum-of-art",
+                        source_url=asset.source_url,
+                        metadata=asset.metadata,
+                        stats=combination_stats,
+                        records=records,
+                        errors=errors,
+                        collected_portrait_ids=collected_portrait_ids,
+                        fixtures_dir=fixtures_dir,
+                    )
+
+                remaining = per_combination_target - combination_stats.collected_count
+                if remaining <= 0:
+                    continue
+
+                wellcome_outcome = search_wellcome_portraits_for_combo(
+                    country,
+                    era,
+                    gender,
+                    limit=max(remaining * 3, per_combination_target),
+                    fixtures_dir=fixtures_dir,
+                )
+                for error in wellcome_outcome.errors:
+                    errors.append(
+                        {
+                            "country": country.country_name,
+                            "era_name": era.era_name,
+                            "gender": gender,
+                            "source_name": "wellcome-collection",
+                            "error": error,
+                        }
+                    )
+
+                for asset in wellcome_outcome.assets:
+                    combination_stats.candidate_count += 1
+                    if combination_stats.collected_count >= per_combination_target:
+                        break
+                    _maybe_collect_direct_asset(
+                        output_dir=output_dir,
+                        country=country,
+                        era=era,
+                        gender=gender,
+                        asset_id=asset.asset_id,
+                        person_name=asset.title,
+                        reference_year=asset.year,
+                        year_basis="object_date",
+                        source_name="wellcome-collection",
+                        source_url=asset.source_url,
+                        metadata=asset.metadata,
+                        stats=combination_stats,
+                        records=records,
+                        errors=errors,
+                        collected_portrait_ids=collected_portrait_ids,
+                        fixtures_dir=fixtures_dir,
+                    )
+
+                remaining = per_combination_target - combination_stats.collected_count
+                if remaining <= 0:
+                    continue
+
+                loc_outcome = search_portraits_for_combo(
+                    country,
+                    era,
+                    gender,
+                    limit=max(remaining * 3, per_combination_target),
+                    fixtures_dir=fixtures_dir,
+                )
+                for error in loc_outcome.errors:
+                    errors.append(
+                        {
+                            "country": country.country_name,
+                            "era_name": era.era_name,
+                            "gender": gender,
+                            "source_name": "library-of-congress",
+                            "error": error,
+                        }
+                    )
+
+                for asset in loc_outcome.assets:
+                    combination_stats.candidate_count += 1
+                    if combination_stats.collected_count >= per_combination_target:
+                        break
+                    _maybe_collect_direct_asset(
+                        output_dir=output_dir,
+                        country=country,
+                        era=era,
+                        gender=gender,
+                        asset_id=asset.asset_id,
+                        person_name=asset.title,
+                        reference_year=asset.year,
+                        year_basis="object_date",
+                        source_name="library-of-congress",
+                        source_url=asset.source_url,
+                        metadata=asset.metadata,
+                        stats=combination_stats,
+                        records=records,
+                        errors=errors,
+                        collected_portrait_ids=collected_portrait_ids,
+                        fixtures_dir=fixtures_dir,
+                    )
+
+            _write_outputs(
+                output_dir=output_dir,
+                records=records,
+                stats=stats,
+                countries=countries,
+                eras=eras,
+                errors=errors,
+                per_combination_target=per_combination_target,
+                image_width=image_width,
+                eras_file=eras_file or default_era_file(),
+                countries_file=countries_file or default_country_file(),
+            )
 
     _write_outputs(
         output_dir=output_dir,
@@ -258,18 +487,21 @@ def _build_local_path(
     era: EraDefinition,
     gender: str,
     candidate: WikidataCandidate,
+    source_name: str,
+    asset_file_title: str,
 ) -> Path:
-    file_name = candidate.image_file_title.split(":", 1)[-1]
+    file_name = asset_file_title.split(":", 1)[-1]
     suffix = Path(file_name).suffix.lower() or ".jpg"
     stem = slugify(Path(file_name).stem)[:80]
     era_directory = f"{era.birth_year_start}_{era.birth_year_end}"
+    source_slug = slugify(source_name)
     return (
         output_dir
         / "images"
         / country.country_code
         / era_directory
         / gender
-        / f"{candidate.entity_id}_{stem}{suffix}"
+        / f"{candidate.entity_id}_{source_slug}_{stem}{suffix}"
     )
 
 
@@ -367,3 +599,172 @@ def _portrait_id(entity_id: str, file_title: str) -> str:
 
 def _combination_key(country_name: str, era_name: str, gender: str) -> str:
     return f"{country_name}|{era_name}|{gender}"
+
+
+def _maybe_collect_asset(
+    *,
+    output_dir: Path,
+    country: CountryTarget,
+    era: EraDefinition,
+    gender: str,
+    candidate: WikidataCandidate,
+    source_name: str,
+    source_url: str,
+    metadata: CommonsImageMetadata,
+    stats: CombinationStats,
+    records: list[PortraitRecord],
+    errors: list[dict[str, str]],
+    collected_portrait_ids: set[str],
+    fixtures_dir: Path | None,
+) -> bool:
+    portrait_id = _portrait_id(
+        candidate.entity_id, f"{source_name}:{metadata.file_title}"
+    )
+    if portrait_id in collected_portrait_ids:
+        return False
+
+    if not is_commercially_usable(metadata):
+        stats.license_rejected_count += 1
+        return False
+
+    local_path = _build_local_path(
+        output_dir=output_dir,
+        country=country,
+        era=era,
+        gender=gender,
+        candidate=candidate,
+        source_name=source_name,
+        asset_file_title=metadata.file_title,
+    )
+
+    try:
+        download_image(
+            metadata.file_title,
+            download_url=metadata.download_url,
+            destination=local_path,
+            fixtures_dir=fixtures_dir,
+        )
+    except RuntimeError as error:
+        stats.download_failure_count += 1
+        errors.append(
+            {
+                "image_file_title": metadata.file_title,
+                "source_name": source_name,
+                "source_url": source_url,
+                "error": str(error),
+            }
+        )
+        return False
+
+    stats.collected_count += 1
+    collected_portrait_ids.add(portrait_id)
+    records.append(
+        PortraitRecord(
+            portrait_id=portrait_id,
+            source_name=source_name,
+            entity_id=candidate.entity_id,
+            person_name=candidate.person_name,
+            birth_year=candidate.birth_year,
+            year_basis="person_birth_year",
+            era_name=era.era_name,
+            birth_year_band=era.birth_year_band,
+            nationality=country.country_name,
+            gender=gender,
+            source_url=source_url,
+            media_page_url=metadata.media_page_url,
+            image_file_title=metadata.file_title,
+            license_short_name=metadata.license_short_name,
+            license_url=metadata.license_url,
+            usage_terms=metadata.usage_terms,
+            artist=metadata.artist,
+            credit=metadata.credit,
+            local_path=str(local_path.relative_to(output_dir)),
+        )
+    )
+    return True
+
+
+def _maybe_collect_direct_asset(
+    *,
+    output_dir: Path,
+    country: CountryTarget,
+    era: EraDefinition,
+    gender: str,
+    asset_id: str,
+    person_name: str,
+    reference_year: int,
+    year_basis: str,
+    source_name: str,
+    source_url: str,
+    metadata: CommonsImageMetadata,
+    stats: CombinationStats,
+    records: list[PortraitRecord],
+    errors: list[dict[str, str]],
+    collected_portrait_ids: set[str],
+    fixtures_dir: Path | None,
+) -> bool:
+    portrait_id = _portrait_id(asset_id, f"{source_name}:{metadata.file_title}")
+    if portrait_id in collected_portrait_ids:
+        return False
+
+    if not is_commercially_usable(metadata):
+        stats.license_rejected_count += 1
+        return False
+
+    asset_name = metadata.file_title.split(":", 1)[-1]
+    suffix = Path(asset_name).suffix.lower() or ".jpg"
+    stem = slugify(Path(asset_name).stem)[:80]
+    local_path = (
+        output_dir
+        / "images"
+        / country.country_code
+        / f"{era.birth_year_start}_{era.birth_year_end}"
+        / gender
+        / f"{asset_id}_{slugify(source_name)}_{stem}{suffix}"
+    )
+
+    try:
+        download_image(
+            metadata.file_title,
+            download_url=metadata.download_url,
+            destination=local_path,
+            fixtures_dir=fixtures_dir,
+        )
+    except RuntimeError as error:
+        stats.download_failure_count += 1
+        errors.append(
+            {
+                "image_file_title": metadata.file_title,
+                "source_name": source_name,
+                "source_url": source_url,
+                "error": str(error),
+            }
+        )
+        return False
+
+    stats.collected_count += 1
+    collected_portrait_ids.add(portrait_id)
+    records.append(
+        PortraitRecord(
+            portrait_id=portrait_id,
+            source_name=source_name,
+            entity_id=asset_id,
+            person_name=person_name,
+            birth_year=reference_year,
+            year_basis=year_basis,
+            era_name=era.era_name,
+            birth_year_band=era.birth_year_band,
+            nationality=country.country_name,
+            gender=gender,
+            source_url=source_url,
+            media_page_url=metadata.media_page_url,
+            image_file_title=metadata.file_title,
+            license_short_name=metadata.license_short_name,
+            license_url=metadata.license_url,
+            usage_terms=metadata.usage_terms,
+            artist=metadata.artist,
+            credit=metadata.credit,
+            local_path=str(local_path.relative_to(output_dir)),
+        )
+    )
+    return True

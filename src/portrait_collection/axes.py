@@ -10,6 +10,44 @@ REFERENCE_DATA_DIR: Final[Path] = (
     Path(__file__).resolve().parents[2] / "data" / "reference"
 )
 SUPPORTED_GENDERS: Final[tuple[str, ...]] = ("male", "female")
+DIRECT_SEARCH_GENDER_TERMS: Final[dict[str, tuple[str, ...]]] = {
+    "female": ("portrait woman", "woman"),
+    "male": ("portrait man", "man"),
+}
+COUNTRY_QUERY_VARIANTS: Final[dict[str, tuple[str, ...]]] = {
+    "Argentina": ("Argentina", "Argentine"),
+    "Australia": ("Australia", "Australian"),
+    "Austria": ("Austria", "Austrian"),
+    "Belgium": ("Belgium", "Belgian"),
+    "Brazil": ("Brazil", "Brazilian"),
+    "Canada": ("Canada", "Canadian"),
+    "China": ("China", "Chinese"),
+    "Czech Republic": ("Czech Republic", "Czech"),
+    "Egypt": ("Egypt", "Egyptian"),
+    "France": ("France", "French"),
+    "Germany": ("Germany", "German"),
+    "Greece": ("Greece", "Greek"),
+    "Hungary": ("Hungary", "Hungarian"),
+    "India": ("India", "Indian"),
+    "Indonesia": ("Indonesia", "Indonesian"),
+    "Ireland": ("Ireland", "Irish"),
+    "Italy": ("Italy", "Italian"),
+    "Japan": ("Japan", "Japanese"),
+    "Mexico": ("Mexico", "Mexican"),
+    "Netherlands": ("Netherlands", "Dutch"),
+    "Poland": ("Poland", "Polish"),
+    "Romania": ("Romania", "Romanian"),
+    "Russia": ("Russia", "Russian"),
+    "Singapore": ("Singapore", "Singaporean"),
+    "South Africa": ("South Africa", "South African"),
+    "South Korea": ("South Korea", "Korean"),
+    "Spain": ("Spain", "Spanish"),
+    "Taiwan": ("Taiwan", "Taiwanese"),
+    "Turkey": ("Turkey", "Turkish"),
+    "United Kingdom": ("United Kingdom", "British"),
+    "United States": ("United States", "American"),
+    "Israel": ("Israel", "Israeli"),
+}
 
 
 @dataclass(frozen=True)
@@ -90,3 +128,10 @@ def slugify(value: str) -> str:
     normalized = re.sub(r"[^a-zA-Z0-9]+", "-", ascii_only).strip("-").lower()
 
     return normalized or "item"
+
+
+def country_query_variants(country_name: str) -> tuple[str, ...]:
+    variants = COUNTRY_QUERY_VARIANTS.get(country_name)
+    if variants is None:
+        return (country_name,)
+    return variants

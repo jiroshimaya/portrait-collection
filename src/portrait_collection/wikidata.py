@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
-from .axes import CountryTarget, EraDefinition
+from .axes import CountryTarget
 
 WIKIDATA_SPARQL_ENDPOINT: Final[str] = "https://query.wikidata.org/sparql"
 USER_AGENT: Final[str] = (
@@ -36,16 +37,16 @@ class WikidataCandidate:
 def fetch_candidates(
     country: CountryTarget,
     *,
-    era: EraDefinition,
     gender: str,
     limit: int,
+    sort_order: str,
     fixtures_dir: Path | None = None,
 ) -> list[WikidataCandidate]:
     payload = _load_payload(
         country=country,
-        era=era,
         gender=gender,
         limit=limit,
+        sort_order=sort_order,
         fixtures_dir=fixtures_dir,
     )
     bindings = payload["results"]["bindings"]
@@ -55,7 +56,9 @@ def fetch_candidates(
     for binding in bindings:
         entity_url = binding["person"]["value"]
         entity_id = entity_url.rsplit("/", 1)[-1]
-        birth_year = int(binding["dateOfBirth"]["value"][:4])
+        birth_year = _extract_birth_year(binding)
+        if birth_year is None:
+            continue
         image_url = binding["image"]["value"]
         image_file_title = "File:" + unquote(
             urlparse(image_url).path.rsplit("/", 1)[-1]
@@ -85,16 +88,16 @@ def fetch_candidates(
 
 def _load_payload(
     country: CountryTarget,
-    era: EraDefinition,
     gender: str,
     limit: int,
+    sort_order: str,
     fixtures_dir: Path | None,
 ) -> dict[str, Any]:
     if fixtures_dir is not None:
         fixture_path = (
             fixtures_dir
             / "wikidata"
-            / f"{country.wikidata_qid}_{era.birth_year_start}_{era.birth_year_end}_{gender}.json"
+            / f"{country.wikidata_qid}_{gender}_{sort_order}.json"
         )
 
         with fixture_path.open("r", encoding="utf-8") as handle:
@@ -102,10 +105,9 @@ def _load_payload(
 
     query = _build_query(
         country_qid=country.wikidata_qid,
-        birth_year_start=era.birth_year_start,
-        birth_year_end=era.birth_year_end,
         gender=gender,
         limit=limit,
+        sort_order=sort_order,
     )
     url = f"{WIKIDATA_SPARQL_ENDPOINT}?format=json&query={quote(query)}"
     request = Request(
@@ -115,33 +117,33 @@ def _load_payload(
 
     for attempt in range(1):
         try:
-            with urlopen(request, timeout=8) as response:
+            with urlopen(request, timeout=12) as response:
                 return json.load(response)
         except HTTPError as error:
             if error.code not in {429, 500, 502, 503, 504} or attempt == 0:
                 raise RuntimeError(
-                    f"Wikidata query failed for {country.country_name} / {era.era_name} / {gender}: {error}"
+                    f"Wikidata query failed for {country.country_name} / {gender} / {sort_order}: {error}"
                 ) from error
         except (URLError, TimeoutError) as error:
             if attempt == 0:
                 raise RuntimeError(
-                    f"Wikidata query failed for {country.country_name} / {era.era_name} / {gender}: {error}"
+                    f"Wikidata query failed for {country.country_name} / {gender} / {sort_order}: {error}"
                 ) from error
         time.sleep(2**attempt)
 
     raise RuntimeError(
-        f"Wikidata query failed for {country.country_name} / {era.era_name} / {gender}"
+        f"Wikidata query failed for {country.country_name} / {gender} / {sort_order}"
     )
 
 
 def _build_query(
     *,
     country_qid: str,
-    birth_year_start: int,
-    birth_year_end: int,
     gender: str,
     limit: int,
+    sort_order: str,
 ) -> str:
+    order_direction = "ASC" if sort_order == "asc" else "DESC"
     return f"""
 SELECT DISTINCT ?person ?personLabel ?dateOfBirth ?genderLabel ?countryLabel ?image WHERE {{
   BIND(wd:{country_qid} AS ?country)
@@ -149,12 +151,30 @@ SELECT DISTINCT ?person ?personLabel ?dateOfBirth ?genderLabel ?countryLabel ?im
           wdt:P18 ?image ;
           wdt:P569 ?dateOfBirth ;
           wdt:P21 ?gender .
+  BIND(YEAR(?dateOfBirth) AS ?birthYear)
   FILTER(?gender = wd:{GENDER_QIDS[gender]})
-  FILTER(YEAR(?dateOfBirth) >= {birth_year_start} && YEAR(?dateOfBirth) <= {birth_year_end})
   ?person wdt:P19 ?birthPlace .
   ?birthPlace wdt:P17 ?country .
   SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
 }}
-ORDER BY ?dateOfBirth ?personLabel
+ORDER BY {order_direction}(?dateOfBirth) ?personLabel
 LIMIT {limit}
 """.strip()
+
+
+def _extract_birth_year(binding: dict[str, Any]) -> int | None:
+    if "birthYear" in binding:
+        try:
+            return int(binding["birthYear"]["value"])
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    date_of_birth = binding.get("dateOfBirth", {}).get("value", "")
+    match = re.match(r"^([+-]?\d+)", str(date_of_birth))
+    if match is None:
+        return None
+
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None

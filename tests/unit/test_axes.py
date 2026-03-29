@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from portrait_collection.axes import (
+    DIRECT_SEARCH_GENDER_TERMS,
     EraDefinition,
     assign_era,
+    country_query_variants,
     load_country_targets,
     load_era_definitions,
     normalize_gender,
@@ -31,6 +33,16 @@ class TestNormalizeGender:
 class TestSlugify:
     def test_正常系_ファイル名向けにasciiスラッグ化する(self) -> None:
         assert slugify("Albert Einstein Portrait 01") == "albert-einstein-portrait-01"
+
+
+class TestDirectSearchTerms:
+    def test_正常系_国名の検索バリエーションを返す(self) -> None:
+        assert country_query_variants("Japan") == ("Japan", "Japanese")
+        assert country_query_variants("Unknownland") == ("Unknownland",)
+
+    def test_正常系_gender別の直検索語を持つ(self) -> None:
+        assert DIRECT_SEARCH_GENDER_TERMS["female"] == ("portrait woman", "woman")
+        assert DIRECT_SEARCH_GENDER_TERMS["male"] == ("portrait man", "man")
 
 
 class TestDefaultReferenceAxes:

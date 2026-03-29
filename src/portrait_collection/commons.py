@@ -71,6 +71,8 @@ def is_commercially_usable(metadata: CommonsImageMetadata) -> bool:
         token in joined
         for token in (
             "public domain",
+            "no known restrictions",
+            "no restrictions",
             "cc by",
             "cc-by",
             "cc0",

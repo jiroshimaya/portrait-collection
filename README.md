@@ -1,6 +1,6 @@
 # portrait-collection
 
-issue #1 に対応するため、Wikidata / Wikimedia Commons を使って科学者寄りの肖像画像を収集する CLI を追加しました。
+issue #1 に対応するため、Wikidata / Wikimedia Commons を主軸にしつつ、The Met Open Access と Library of Congress も補助ソースとして使える肖像画像収集 CLI を追加しました。
 
 保存時には画像本体に加えて、`era_name`、`birth_year_band`、`nationality`、`gender`、引用元 URL、ライセンス情報をメタデータとして出力します。
 
@@ -38,6 +38,9 @@ uv run portrait-collection collect \
 - 国籍は現代国名に統一し、収集上は「出生地を現代国家に射影した国名」を用いる
 - 性別は現状の Wikidata 収集安定性を優先して `male` / `female` を対象
 - 商用利用不可 (`NonCommercial`) の画像は除外
+- 画像ソースは `Wikimedia Commons` を優先し、足りない場合は `The Met Open Access`、`Art Institute of Chicago`、`Cleveland Museum of Art`、`Wellcome Collection`、`Library of Congress` も使う
+- `Library of Congress` では国名バリエーション（例: `Japan` / `Japanese`）と複数ページ走査で候補探索を広げる
+- `Art Institute of Chicago` と `Cleveland Museum of Art` では direct-search の結果を era をまたいで再利用し、API 呼び出し数を抑える
 - 各組み合わせで不足した場合は `collection_summary.csv` に理由を残す
 
 詳細な設計判断は `docs/adr/00001-use-wikimedia-pipeline-for-portrait-collection.md` を参照してください。
